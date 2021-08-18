@@ -1,242 +1,340 @@
-from pyrogram import Client, filters, emoji
-from pyrogram.types import Message, Chat, InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
-import sys
+import asyncio
 import os
-import time
+import youtube_dl
 
-API_ID = os.getenv("API_ID")
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-BOT_NAME = os.getenv("BOT_NAME")
-SUDO_USERS = os.getenv("SUDO_USERS")
+from datetime import datetime
+from pyrogram import Client, filters
+from pytgcalls import GroupCall
+from Python_ARQ import ARQ
 
-
-TG = Client(
-	"LuciTag Bot",
-	api_id=API_ID,
-	api_hash=API_HASH,
-	bot_token=BOT_TOKEN
-	)
-
-MENTION = "[{}](tg://user?id={})"
-MESSAGE = "👋🏻Merhaba {}, Hoşgeldin!"
-
-DUR = False
-SORGU = None
-WSORGU = None
-WDUR = False
-
-PM = []
-GR = []
-
-def bstart():
-	BUTTON=[[InlineKeyboardButton(text="Lucifer", url="https://t.me/Lucifermiyiz")]]
-	BUTTON+=[[InlineKeyboardButton(text="➕ BENİ GRUBA EKLE ➕", url=f"https://t.me/LuciTagBot?startgroup=true")]]
-	return InlineKeyboardMarkup(BUTTON)
-
-@TG.on_message(
-	filters.command("start")
-	& filters.private
-	)
-async def start(client, message):
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	await message.reply_text(f"👋🏻Merhaba {message.from_user.mention}\n\nBen [Lucifer](https://t.me/Lucifermiyiz) Tarafından codlanan bir üye etiketleme botuyum.\n\nYardım için /help",
-		disable_web_page_preview=True,
-		reply_markup=bstart()
-		)
-@TG.on_message(
-	filters.command(["start", f"start@LuciTagBot"])
-	& filters.group
-	)
-async def star(client, message):
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	await message.reply_text(f"👋🏻Merhaba {message.from_user.mention}\n\nBen [Lucifer](https://t.me/Lucifermiyiz) Tarafından codlanan bir üye etiketleme botuyum.\n\nYardım için /help",
-		disable_web_page_preview=True,
-		reply_markup=bstart()
-		)
-	
-@TG.on_message(
-	filters.command(["help", f"help@LuciTagBot"])
-	& filters.group
+from .functions import (
+    transcode,
+    download_and_transcode_song,
+    convert_seconds,
+    time_to_seconds,
+    generate_cover,
+    generate_cover_square
 )
-async def help(client, message):
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	await message.reply_text(f"👋🏻Merhaba {message.from_user.mention}\n\nKomutlar:\n/atag mesaj\n/etag mesaj\n\n/cancel\nNOT: Sadece grupta çalışır ve bota yetki vermeden çalışmaz.")
-	
-@TG.on_message(
-	filters.command("help")
-	& filters.private
+
+from .configs import (
+    API_ID as api_id,
+    API_HASH as api_hash,
+    SUDO_CHAT_ID as sudo_chat_id,
+    ARQ_API,
+    HEROKU
 )
-async def hel(client, message):
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	await message.reply_text(f"👋🏻Merhaba {message.from_user.mention}\n\nKomutlar:\n/atag mesaj\n/etag mesaj\n\n/cancel\nNOT: Sadece grupta çalışır ve bota yetki vermeden çalışmaz.")
 
-@TG.on_message(filters.command("reklam") & (filters.private | filters.group))
-async def duyuru(b, m):
-        text = " ".join(message.command[1:])
-        for i in (PM, GR):
-               await TG.send_message(chat_id=i, text=f"{text}")
-               time.sleep(2)
-
-@TG.on_message(
-	filters.private
-	& filters.command("stats")
-	)
-async def st(client: TG, message: Message):
-	pm = len(PM)
-	gr = len(GR)
-	await message.reply_text(f"Chat: {gr/2}\nUser: {pm/2}")
-
-	
-@TG.on_message(
-	filters.command(["atag", "etag","cancel"])
-	& filters.private
+from .misc import (
+    HELP_TEXT,
+    START_TEXT,
+    REPO_TEXT,
+    DONATION_TEXT
 )
-async def priw(client, message):
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.tpye == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	await message.reply_text("Bu komut sadece grupta çalışır.")
+
+if HEROKU:
+    from .configs import SESSION_STRING
+
+if not HEROKU:
+    app = Client('ktgvc', api_id=api_id, api_hash=api_hash)
+else:
+    app = Client(SESSION_STRING, api_id=api_id, api_hash=api_hash)
+
+group_calls = GroupCall(None, path_to_log_file='')
+cmd_filter = lambda cmd: filters.command(cmd, prefixes='/')
+
+# Arq İstemcisi
+arq = ARQ(ARQ_API)
+
+# Ham müzik dosyası
+raw_filename = 'input.raw'
+
+queue = []  # Burası tüm şarkı kuyruğunun depolandığı yerdir.
+playing = False  # Tbir şey oynuyor ya da oynamıyorsa.
+
+@app.on_message(filters.text & cmd_filter('start'))
+async def start(_, message):
+    await message.reply_text(START_TEXT)
+
+@app.on_message(filters.text & cmd_filter('help'))
+async def helps(_, message):
+    await message.reply_text(HELP_TEXT)
+
+@app.on_message(filters.text & cmd_filter('repo'))
+async def repo(_, message):
+    await message.reply_text(REPO_TEXT)
+
+@app.on_message(filters.text & cmd_filter('ping'))
+async def ping(_, message):
+    start = datetime.now()
+    msg = await send('`Pong!`')
+    end = datetime.now()
+    latency = (end - start).microseconds / 1000
+    await msg.edit(f"**Pong!**\n`{latency} ms`")
+
+@app.on_message(filters.text & cmd_filter('donation'))
+async def donation(_, message):
+    await message.reply_text(DONATION_TEXT)
+
+@app.on_message(filters.text & cmd_filter('join'))
+async def join(_, message):
+    if group_calls.is_connected:
+        await message.reply_text('Bot zaten katıldı!')
+        return
+    group_calls.client = app
+    await group_calls.start(message.chat.id)
+    await message.reply_text('Başarıyla katıldı!')
+
+@app.on_message(filters.text & cmd_filter('mute'))
+async def mute(_, message):
+    group_calls.set_is_mute(is_muted=True)
+    await message.reply_text('Başarıyla sessize alındı!')
+
+@app.on_message(filters.text & cmd_filter('unmute'))
+async def unmute(_, message):
+    group_calls.set_is_mute(is_muted=False)
+    await message.reply_text('Başarıyla sessizden alındı')
+
+@app.on_message(filters.text & cmd_filter('volume'))
+async def volume(_, message):
+    if len(message.command) < 2:
+        await message.reply_text('Cildi geçmeyi unuttunuz (1-200)')
+
+    await group_calls.set_my_volume(volume=int(message.command[1]))
+    await message.reply_text(f'Hacim olarak değiştirildi{message.command[1]}')
+
+@app.on_message(filters.text & cmd_filter('stop'))
+async def stop(_, message):
+    global playing
+    group_calls.stop_playout()
+    queue.clear()
+    playing = False
+    await message.reply_text('Şarkıyı başarıyla durdurdu!')
+
+@app.on_message(filters.text & cmd_filter('leave'))
+async def leave(_, message):
+    global playing
+    if not group_calls.is_connected:
+        await message.reply_text('Bot çoktan ayrıldı!')
+        return
+    await group_calls.stop()
+    queue.clear()
+    playing = False
+    group_calls.input_filename = ''
+    await message.reply_text('Başarıyla ayrıldı!')
+
+@app.on_message(filters.text & cmd_filter('kill'))
+async def killbot(_, message):
+    await send("__**Killed!__**")
+    quit()
+
+@app.on_message(filters.text & cmd_filter('play'))
+async def queues(_, message):
+    if not group_calls.is_connected:
+        await message.reply_text('Bot, Sesli Aramalara katılmadı!')
+        return
+    usage = "**Usage:**\n__**/play youtube Song_Name**__"
+    if len(message.command) < 3:
+        await message.reply_text(usage)
+        return
+    text = message.text.split(None, 2)[1:]
+    service = text[0]
+    song_name = text[1]
+    requested_by = message.from_user.first_name
+    services = ["youtube", "deezer", "saavn"]
+    if service not in services:
+        await message.reply_text(usage)
+        return
+    if len(queue) > 0:
+        await message.reply_text("__**Sıraya Eklendi.__**")
+        queue.append({"service": service, "song": song_name,
+                      "requested_by": requested_by})
+        await play()
+        return
+    queue.append({"service": service, "song": song_name,
+                  "requested_by": requested_by})
+    await play()
+
+@app.on_message(filters.text & cmd_filter('skip'))
+async def skip(_, message):
+    global playing
+    if len(queue) == 0:
+        await message.reply_text("__**Sıra Boş.**__")
+        return
+    playing = False
+    await message.reply_text("__**Skipped!**__")
+    await play()
+
+@app.on_message(filters.text & cmd_filter('queue'))
+async def queue_list(_, message):
+    if len(queue) != 0:
+        i = 1
+        text = ""
+        for song in queue:
+            text += f"**{i}. Platform:** __**{song['servirs']}**__ | **Song:** __**{song['song']}**__\n"
+            i += 1
+        await message.reply_text(text)
+    else:
+        await message.reply_text("__**Sıra Boş.**__")
+
+# Kuyruk işleyici
+
+async def play():
+    global queue, playing
+    while not playing:
+        await asyncio.sleep(2)
+        if len(queue) != 0:
+            service = queue[0]["service"]
+            song = queue[0]["song"]
+            requested_by = queue[0]["requested_by"]
+            if service == "youtube":
+                playing = True
+                del queue[0]
+                try:
+                    await ytplay(requested_by, song)
+                except Exception as e:
+                    print(str(e))
+                    await send(str(e))
+                    playing = False
+            elif service == "saavn":
+                playing = True
+                del queue[0]
+                try:
+                    await jiosaavn(requested_by, song)
+                except Exception as e:
+                    print(str(e))
+                    await send(str(e))
+                    playing = False
+            elif service == "deezer":
+                playing = True
+                del queue[0]
+                try:
+                    await deezer(requested_by, song)
+                except Exception as e:
+                    print(str(e))
+                    await send(str(e))
+                    playing = False
 
 
-@TG.on_message(
-	filters.command("etag")
-	& filters.group
-	)
-async def tag(client: TG, message: Message):
-	global DUR
-	global SORGU
-	msg = " ".join(message.command[1:])
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	async for mem in TG.iter_chat_members(chat_id=chat.id, filter="administrators"):
-		if message.from_user.id == mem.user.id:
-			await message.reply_text(f"{message.from_user.mention} Kullanıcı etiketleme başlatıldı.")
-			time.sleep(1)
-			SORGU = True
-			async for member in TG.iter_chat_members(chat_id=chat.id, filter="etag", limit=500):
-				if DUR:
-					DUR=False
-					SORGU = None
-					break
-				time.sleep(1)
-				await TG.send_message(chat_id=chat.id, text=f"{member.user.mention} {msg}")
-				time.sleep(1.5)
-		if message.from_user.id != mem.user.id:
-			pass
-		
-@TG.on_message(
-	filters.command("atag")
-	& filters.group
-	)
-async def ta(client: TG, message: Message):
-	global DUR
-	global SORGU
-	msg = " ".join(message.command[1:])
-	chat = message.chat
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	async for mem in TG.iter_chat_members(chat_id=chat.id, filter="administrators"):
-		if message.from_user.id == mem.user.id:
-			await message.reply_text(f"{message.from_user.mention} Adminleri etiketleme başlatıldı.")
-			time.sleep(1)
-			SORGU = True
-			async for member in TG.iter_chat_members(chat_id=chat.id, filter="administrators"):
-				if DUR:
-					DUR=False
-					SORGU = None
-					break
-				time.sleep(1)
-				await TG.send_message(chat_id=chat.id, text=f"{member.user.mention} {msg}")
-				time.sleep(1.5)
-		if message.from_user.id != mem.user.id:
-			pass
+# Deezer----------------------------------------------------------------------------------------
+
+async def deezer(requested_by, query):
+    global playing
+    m = await send(f"__**Deezer'da {query} aranıyor.**__")
+    try:
+        songs = await arq.deezer(query, 1)
+        title = songs[0].title
+        duration = convert_seconds(int(songs[0].duration))
+        thumbnail = songs[0].thumbnail
+        artist = songs[0].artist
+        url = songs[0].url
+    except Exception as e:
+        await m.edit("__**Sorgunuzla Eşleşen Şarkı Bulunamadı.**__")
+        playing = False
+        print(str(e))
+        return
+    await m.edit("__**Küçük Resim Oluşturuluyor.**__")
+    await generate_cover_square(requested_by, title, artist, duration, thumbnail)
+    await m.edit("__**İndirme ve Kod Dönüştürme.**__")
+    await download_and_transcode_song(url)
+    await m.delete()
+    m = await app.send_photo(
+        chat_id=sudo_chat_id,
+        photo="final.png",
+        caption=f"**Playing** __**[{title}]({url})**__ **Deezer aracılığıyla.**",
+    )
+    os.remove("final.png")
+    group_calls.input_filename = raw_filename
+    await asyncio.sleep(int(songs[0]["duration"]))
+    await m.delete()
+    playing = False
 
 
-		
-@TG.on_message(
-	filters.group
-	& filters.command("cancel")
-)
-async def stop(client: TG, message: Message):
-	global DUR
-	chat = message.chat
-	async for mem in TG.iter_chat_members(chat_id=chat.id, filter="administrators"):
-		if message.from_user.id == mem.user.id:
-			if SORGU == None:
-				await message.reply_text("Aktif çalışan işlem yoktur.")
-				return
+# Jiosaavn--------------------------------------------------------------------------------------
 
-			DUR = True
-			await message.reply_text(f"{message.from_user.mention} Etiketleme işlemi durduruldu.")	
-		if message.from_user.id != mem.user.id:
-			pass
-		
-@TG.on_message(filters.group & filters.new_chat_members)
-def welcome(client, message):
-	chat = message.chat.id
-	for i in (PM, GR):
-		if chat.id != i:
-			if message.chat.type == "private":
-				PM.append(chat.id)
-			else:
-				GR.append(chat.id)
-		if chat.id == i:
-			pass
-	for i in message.new_chat_members:
-		new_members = MENTION.format(i.first_name, i.id)
-		text = MESSAGE.format(new_members)
-		message.reply(text, disable_web_page_preview=True)
-	
-TG.run()
+
+async def jiosaavn(requested_by, query):
+    global playing
+    m = await send(f"__**aranıyor{query} on JioSaavn.**__")
+    try:
+        songs = await arq.saavn(query)
+        sname = songs[0].song
+        slink = songs[0].media_url
+        ssingers = songs[0].singers
+        sthumb = songs[0].image
+        sduration = songs[0].duration
+        sduration_converted = convert_seconds(int(sduration))
+    except Exception as e:
+        await m.edit("__**Sorgunuzla Eşleşen Şarkı Bulunamadı.**__")
+        print(str(e))
+        playing = False
+        return
+    await m.edit("__**Küçük Resim İşleniyor.**__")
+    await generate_cover_square(
+        requested_by, sname, ssingers, sduration_converted, sthumb
+    )
+    await m.edit("__**İndirme ve Kod Dönüştürme.**__")
+    await download_and_transcode_song(slink)
+    await m.delete()
+    m = await app.send_photo(
+        chat_id=sudo_chat_id,
+        caption=f"**Çalıyor** __**{sname}**__ **Jiosaavn Yoluyla.**",
+        photo="final.png",
+    )
+    os.remove("final.png")
+    group_calls.input_filename = raw_filename
+    await asyncio.sleep(int(sduration))
+    await m.delete()
+    playing = False
+
+
+# Youtube Play-----------------------------------------------------------------------------------
+
+
+async def ytplay(requested_by, query):
+    global playing
+    ydl_opts = {"format": "bestaudio"}
+    m = await send(f"__youtube'da{query} aranıyor**__")
+    try:
+        results = await arq.youtube(query, 1)
+        link = f"https://youtube.com{results[0].url_suffix}"
+        title = results[0].title
+        thumbnail = results[0].thumbnails[0]
+        duration = results[0].duration
+        views = results[0].views
+        if time_to_seconds(duration) >= 1800:
+            await m.edit("__**Sadece 30 Dakika içindeki şarkılar.**__")
+            playing = False
+            return
+    except Exception as e:
+        await m.edit("__**Eşleşen Şarkı Bulunamadı.**__")
+        playing = False
+        print(str(e))
+        return
+    await m.edit("__**Küçük Resim İşleniyor.**__")
+    await generate_cover(requested_by, title, views, duration, thumbnail)
+    await m.edit("__**Müzik indiriliyor..**__")
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+        info_dict = ydl.extract_info(link, download=False)
+        audio_file = ydl.prepare_filename(info_dict)
+        ydl.process_info(info_dict)
+    await m.edit("__**Kod dönüştürme.**__")
+    os.rename(audio_file, "audio.webm")
+    transcode("audio.webm")
+    await m.delete()
+    m = await app.send_photo(
+        chat_id=sudo_chat_id,
+        caption=f"**YouTube aracılığıyla__**[{title}]({link})**__ **oynatmak.**",
+        photo="final.png",
+    )
+    os.remove("final.png")
+    group_calls.input_filename = raw_filename
+    await asyncio.sleep(int(time_to_seconds(duration)))
+    playing = False
+    await m.delete()
+
+async def send(text):
+    m = await app.send_message(sudo_chat_id, text=text, disable_web_page_preview=True)
+    return m
+
+print('[INFO] Bot çalışıyor...\n')
+app.run()
