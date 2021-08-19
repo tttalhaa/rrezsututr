@@ -1,0 +1,36 @@
+{
+    "name": "LuciSongBot",
+    "description": "Tele Ses Aramalar Müzik.",
+    "keywords": [
+      "telegram",
+      "voicechat",
+      "music",
+      "python",
+      "pyrogram",
+      "callsmusic"
+    ],
+    "repository": "",
+    "stack": "container",
+    "env": {
+      "SESSION_STRING": {
+        "description": "Bir Pyrogram oturum dizisi.",
+        "required": true
+  
+      },
+      "API_ID": {
+        "description": "An app ID from https://my.telegram.org/apps.",
+        "required": true
+  
+      },
+      "API_HASH": {
+        "description": "Bir uygulama karması https://my.telegram.org/apps.",
+        "required": true
+  
+      },
+      "SUDO_CHAT_ID": {
+        "description": "Botunuzun çalıştığı sohbet kimliği.",
+        "required": true
+  
+       }
+    }
+  }
