@@ -3,8 +3,7 @@
     & filters.command("kullanim")
     )
 async def kl(client, message):
-        await message.reply_text(f"""<b>
-Merhba🖐🏻, {message.from_user.mention} 
+       await message.reply_text(f"""<b>
 Merhba🖐🏻, {message.from_user.mention} şimdi sana bu bot nasıl kullanılır onu anlatıcam...
 \n /atag - Adminleri etiketler Ör\:Mesajınızı yazın ve gönderin NOT:(/atag@LuciTagBot böyle değil.) 
 \n /all - Kullanıcıları etiketler Ör\:Mesajınızı yazın ve gönderin NOT:(/all@LuciTagBot böyle değil.) 
